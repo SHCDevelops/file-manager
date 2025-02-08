@@ -20,7 +20,7 @@ func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) 
 			return err
 		}
 
-		if info.IsDir() && utils.IsIgnored(path, ignoreList) {
+		if utils.IsIgnored(path, ignoreList) {
 			return filepath.SkipDir
 		}
 
