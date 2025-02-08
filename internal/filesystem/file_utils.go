@@ -3,18 +3,23 @@ package filesystem
 import (
 	"crypto/md5"
 	"fmt"
+	"github.com/SHCDevelops/file-manager/lib/utils"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-func FindDuplicates(dir string) ([][]string, error) {
+func FindDuplicates(dir string, ignoreList []string) ([][]string, error) {
 	hashes := make(map[string][]string)
 	var duplicates [][]string
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		if info.IsDir() && utils.IsIgnored(path, ignoreList) {
+			return filepath.SkipDir
 		}
 
 		if !info.IsDir() {

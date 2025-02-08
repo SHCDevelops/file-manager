@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"github.com/SHCDevelops/file-manager/lib/utils"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,12 +12,16 @@ type FileSize struct {
 	Size int64
 }
 
-func AnalyzeSpace(dir string, top int) ([]FileSize, error) {
+func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) {
 	var files []FileSize
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		if info.IsDir() && utils.IsIgnored(path, ignoreList) {
+			return filepath.SkipDir
 		}
 
 		if !info.IsDir() {

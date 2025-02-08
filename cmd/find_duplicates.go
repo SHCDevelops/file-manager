@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/SHCDevelops/file-manager/internal/filesystem"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 var FindDuplicatesCmd = &cobra.Command{
@@ -15,7 +16,10 @@ It uses file hashes to identify duplicates.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		directory := args[0]
 
-		duplicates, err := filesystem.FindDuplicates(directory)
+		ignorePattern, _ := cmd.Flags().GetString("ignore")
+		ignoreList := strings.Split(ignorePattern, ",")
+
+		duplicates, err := filesystem.FindDuplicates(directory, ignoreList)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
@@ -30,4 +34,8 @@ It uses file hashes to identify duplicates.`,
 			}
 		}
 	},
+}
+
+func init() {
+	FindDuplicatesCmd.Flags().StringP("ignore", "i", "", "Comma-separated list of directories or patterns to ignore (e.g., temp,.git)")
 }
