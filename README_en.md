@@ -98,12 +98,13 @@ file-manager code-stats ./myproject --ignore "vendor,node_modules"
 ---
 ## Flags
 
-| Command              | Flag       | Description                                                                 |
-|----------------------|------------|-----------------------------------------------------------------------------|
-| `find-duplicates`    | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
-| `analyze-space`      | `--top`    | Number of files to display (default: 10).                                  |
-| `analyze-space`      | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
-| `code-stats`         | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
+| Command           | Flag                | Description                                                  |
+|-------------------|---------------------|--------------------------------------------------------------|
+| `find-duplicates` | `--ignore`          | List of directories or patterns to ignore (comma-separated). |
+| `analyze-space`   | `--top`             | Number of files to display (default: 10).                    |
+| `analyze-space`   | `--ignore`          | List of directories or patterns to ignore (comma-separated). |
+| `code-stats`      | `--ignore`          | List of directories or patterns to ignore (comma-separated). |
+| `code-stats`      | `--ignore-language` | List of languages to ignore (comma-separated).               |
 ---
 ## Examples
 ### 1. Find duplicate files, ignoring `.git` and `temp` directories:
