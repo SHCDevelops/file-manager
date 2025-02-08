@@ -1,10 +1,12 @@
 package filesystem
 
 import (
-	"github.com/SHCDevelops/file-manager/lib/utils"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+
+	"github.com/SHCDevelops/file-manager/lib/utils"
 )
 
 type FileSize struct {
@@ -14,6 +16,21 @@ type FileSize struct {
 
 func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) {
 	var files []FileSize
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var errors []error
+
+	worker := func(path string, info os.FileInfo) {
+		defer wg.Done()
+
+		if utils.IsIgnored(path, ignoreList, false) {
+			return
+		}
+
+		mu.Lock()
+		files = append(files, FileSize{Path: path, Size: info.Size()})
+		mu.Unlock()
+	}
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -27,19 +44,20 @@ func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) 
 			return nil
 		}
 
-		if utils.IsIgnored(path, ignoreList, false) {
-			return nil
-		}
-
-		if !info.IsDir() {
-			files = append(files, FileSize{Path: path, Size: info.Size()})
-		}
-
+		wg.Add(1)
+		go worker(path, info)
 		return nil
 	})
 
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
 	if err != nil {
 		return nil, err
+	}
+	if len(errors) > 0 {
+		return nil, errors[0]
 	}
 
 	sort.Slice(files, func(i, j int) bool {

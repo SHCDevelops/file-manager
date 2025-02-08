@@ -70,12 +70,40 @@ file-manager search [pattern] [directory]
 file-manager search "*.txt" /path/to/directory
 ```
 ---
+### Code Statistics Analysis
+
+This command shows detailed code statistics for supported programming languages.
+
+```bash
+file-manager code-stats [directory] [flags]
+```
+
+**Supported Languages:**
+- Go (.go)
+- HTML (.html, .htm)
+- CSS (.css)
+- JavaScript (.js)
+- TypeScript (.ts, .tsx)
+
+**Displayed Metrics:**
+- Total lines of code
+- Comment lines count
+- Pure code lines (total - comments)
+- Percentage ratio
+
+#### Example:
+```bash
+file-manager code-stats ./myproject --ignore "vendor,node_modules"
+```
+---
 ## Flags
+
 | Command              | Flag       | Description                                                                 |
 |----------------------|------------|-----------------------------------------------------------------------------|
 | `find-duplicates`    | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
 | `analyze-space`      | `--top`    | Number of files to display (default: 10).                                  |
 | `analyze-space`      | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
+| `code-stats`         | `--ignore` | List of directories or patterns to ignore (comma-separated).               |
 ---
 ## Examples
 ### 1. Find duplicate files, ignoring `.git` and `temp` directories:
@@ -89,6 +117,25 @@ file-manager analyze-space /path/to/directory --top 5 --ignore "*.tmp"
 ### 3. Find all text files in a directory:
 ```bash
 file-manager search "*.txt" /path/to/directory
+```
+### 4. Analyze project code statistics:
+```bash
+file-manager code-stats ./src --ignore "tests,dist"
+```
+
+**Sample output:**
+```
+Code Statistics:
+
+Go:
+  Total lines: 1520
+  Comments:    320 (21.1%)
+  Code lines:  1200 (78.9%)
+
+JavaScript:
+  Total lines: 890
+  Comments:    178 (20.0%)
+  Code lines:  712 (80.0%)
 ```
 ---
 ## Requirements

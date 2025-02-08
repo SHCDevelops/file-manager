@@ -98,6 +98,32 @@ file-manager search [pattern] [directory]
 ```bash
 file-manager search "*.txt" /path/to/directory
 ```
+---
+### Анализ статистики кода
+
+Эта команда показывает детальную статистику по строкам кода для поддерживаемых языков программирования.
+
+```bash
+file-manager code-stats [directory] [flags]
+```
+
+**Поддерживаемые языки:**
+- Go (.go)
+- HTML (.html, .htm)
+- CSS (.css)
+- JavaScript (.js)
+- TypeScript (.ts, .tsx)
+
+**Отображаемая статистика:**
+- Общее количество строк
+- Количество строк комментариев
+- Чистые строки кода (общее - комментарии)
+- Процентное соотношение
+
+#### Пример:
+```bash
+file-manager code-stats ./myproject --ignore "vendor,node_modules"
+```
 
 ---
 
@@ -108,6 +134,7 @@ file-manager search "*.txt" /path/to/directory
 | `find-duplicates`    | `--ignore` | Список директорий или шаблонов для игнорирования (разделённых запятой).   |
 | `analyze-space`      | `--top`    | Количество файлов для отображения (по умолчанию: 10).                    |
 | `analyze-space`      | `--ignore` | Список директорий или шаблонов для игнорирования (разделённых запятой).   |
+| `code-stats`         | `--ignore` | Список директорий или шаблонов для игнорирования (разделённых запятой).   |
 
 ---
 
@@ -126,6 +153,26 @@ file-manager analyze-space /path/to/directory --top 5 --ignore "*.tmp"
 ### 3. Найти все текстовые файлы в директории:
 ```bash
 file-manager search "*.txt" /path/to/directory
+```
+
+### 4. Анализ статистики кода проекта:
+```bash
+file-manager code-stats ./src --ignore "tests,dist"
+```
+
+**Пример вывода:**
+```
+Code Statistics:
+
+Go:
+  Total lines: 1520
+  Comments:    320 (21.1%)
+  Code lines:  1200 (78.9%)
+
+JavaScript:
+  Total lines: 890
+  Comments:    178 (20.0%)
+  Code lines:  712 (80.0%)
 ```
 
 ---

@@ -7,13 +7,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 func FindDuplicates(dir string, ignoreList []string) ([][]string, error) {
 	hashes := make(map[string][]string)
 	var duplicates [][]string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var errors []error
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -29,20 +33,35 @@ func FindDuplicates(dir string, ignoreList []string) ([][]string, error) {
 			return nil
 		}
 
-		if !info.IsDir() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			hash, err := HashFile(path)
 			if err != nil {
-				return err
+				mu.Lock()
+				errors = append(errors, err)
+				mu.Unlock()
+				return
 			}
 
+			mu.Lock()
 			hashes[hash] = append(hashes[hash], path)
-		}
+			mu.Unlock()
+		}()
 
 		return nil
 	})
 
-	if err != nil {
-		return nil, err
+	wg.Wait()
+
+	if walkErr != nil {
+		return nil, walkErr
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(errors) > 0 {
+		return nil, errors[0]
 	}
 
 	for _, files := range hashes {
