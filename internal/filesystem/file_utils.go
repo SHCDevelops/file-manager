@@ -18,8 +18,15 @@ func FindDuplicates(dir string, ignoreList []string) ([][]string, error) {
 			return err
 		}
 
-		if utils.IsIgnored(path, ignoreList) {
-			return filepath.SkipDir
+		if info.IsDir() {
+			if utils.IsIgnored(path, ignoreList, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if utils.IsIgnored(path, ignoreList, false) {
+			return nil
 		}
 
 		if !info.IsDir() {

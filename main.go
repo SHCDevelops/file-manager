@@ -16,6 +16,7 @@ func main() {
 
 	rootCmd.AddCommand(cmd.AnalyzeSpaceCmd)
 	rootCmd.AddCommand(cmd.FindDuplicatesCmd)
+	rootCmd.AddCommand(cmd.SearchCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

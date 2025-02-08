@@ -4,16 +4,10 @@ import (
 	"github.com/SHCDevelops/file-manager/lib/utils"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
-type FileSize struct {
-	Path string
-	Size int64
-}
-
-func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) {
-	var files []FileSize
+func SearchFiles(dir string, pattern string, ignoreList []string) ([]string, error) {
+	var matchedFiles []string
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -31,24 +25,20 @@ func AnalyzeSpace(dir string, top int, ignoreList []string) ([]FileSize, error) 
 			return nil
 		}
 
-		if !info.IsDir() {
-			files = append(files, FileSize{Path: path, Size: info.Size()})
+		matched, err := filepath.Match(pattern, filepath.Base(path))
+		if err != nil {
+			return err
+		}
+		if matched {
+			matchedFiles = append(matchedFiles, path)
 		}
 
 		return nil
 	})
-
+	
 	if err != nil {
 		return nil, err
 	}
 
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Size > files[j].Size
-	})
-
-	if len(files) > top {
-		files = files[:top]
-	}
-
-	return files, nil
+	return matchedFiles, nil
 }
