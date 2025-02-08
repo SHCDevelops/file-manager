@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/SHCDevelops/file-manager/internal/filesystem"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"strings"
 )
@@ -27,29 +28,34 @@ Supports multiple languages. Use --ignore-language to exclude specific languages
 		ignoreLanguages := strings.Split(strings.ToLower(ignoreLanguagePattern), ",")
 
 		stats, err := filesystem.CountCodeLines(directory, ignoreList, ignoreLanguages)
+
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			color.Red("Error: %v\n", err)
 			return
 		}
 
 		if len(stats.Languages) == 0 {
-			fmt.Println("No code files found in supported formats")
+			color.Yellow("No code files found in supported formats")
 			return
 		}
 
-		fmt.Println("Code Statistics:")
+		header := color.New(color.FgHiMagenta, color.Bold).SprintFunc()
+		langHeader := color.New(color.FgHiCyan, color.Underline).SprintFunc()
+		highlight := color.New(color.FgHiYellow).SprintFunc()
+
+		fmt.Printf("\n%s\n", header("Code Statistics:"))
 		for lang, data := range stats.Languages {
 			if data.TotalLines == 0 {
 				continue
 			}
-			fmt.Printf("\n%s:\n", lang)
-			fmt.Printf("  Total lines: %d\n", data.TotalLines)
-			fmt.Printf("  Comments:    %d (%.1f%%)\n",
-				data.CommentLines,
-				percent(data.CommentLines, data.TotalLines))
-			fmt.Printf("  Code lines:  %d (%.1f%%)\n",
-				data.CodeLines,
-				percent(data.CodeLines, data.TotalLines))
+			fmt.Printf("\n%s\n", langHeader(lang+":"))
+			fmt.Printf("  Total lines: %s\n", highlight(data.TotalLines))
+			fmt.Printf("  Comments:    %s %s\n",
+				highlight(data.CommentLines),
+				color.HiBlackString("(%.1f%%)", percent(data.CommentLines, data.TotalLines)))
+			fmt.Printf("  Code lines:  %s %s\n",
+				highlight(data.CodeLines),
+				color.HiBlackString("(%.1f%%)", percent(data.CodeLines, data.TotalLines)))
 		}
 	},
 }

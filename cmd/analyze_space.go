@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/SHCDevelops/file-manager/internal/filesystem"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"strings"
 )
@@ -20,17 +21,24 @@ var AnalyzeSpaceCmd = &cobra.Command{
 		ignoreList := strings.Split(ignorePattern, ",")
 
 		files, err := filesystem.AnalyzeSpace(directory, top, ignoreList)
+
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			color.Red("Error: %v\n", err)
 			return
 		}
 
 		if len(files) == 0 {
-			fmt.Println("No find files.")
+			color.Yellow("No files found.")
 		} else {
-			fmt.Println("Top files by size:")
+			header := color.New(color.FgHiCyan, color.Bold).SprintFunc()
+			pathColor := color.New(color.FgHiWhite).SprintFunc()
+			sizeColor := color.New(color.FgHiGreen).SprintFunc()
+
+			fmt.Printf("\n%s\n", header("Top files by size:"))
 			for _, file := range files {
-				fmt.Printf("%s (%d bytes)\n", file.Path, file.Size)
+				fmt.Printf("▸ %s %s\n",
+					pathColor(file.Path),
+					sizeColor(fmt.Sprintf("(%d bytes)", file.Size)))
 			}
 		}
 	},

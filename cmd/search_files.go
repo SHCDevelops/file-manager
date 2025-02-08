@@ -3,12 +3,13 @@ package cmd
 import (
 	"fmt"
 	"github.com/SHCDevelops/file-manager/internal/filesystem"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"strings"
 )
 
 var SearchCmd = &cobra.Command{
-	Use:   "search [patter] [directory]",
+	Use:   "search [pattern] [directory]",
 	Short: "Search for files matching a pattern in the specified directory",
 	Long: `This command searches for files that match a given pattern in the specified directory.
 You can ignore specific directories using the --ignore flag.`,
@@ -21,17 +22,21 @@ You can ignore specific directories using the --ignore flag.`,
 		ignoreList := strings.Split(ignorePattern, ",")
 
 		matchedFiles, err := filesystem.SearchFiles(directory, pattern, ignoreList)
+
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			color.Red("Error: %v\n", err)
 			return
 		}
 
 		if len(matchedFiles) == 0 {
-			fmt.Println("No files found.")
+			color.Yellow("No files found.")
 		} else {
-			fmt.Println("Matching files:")
+			header := color.New(color.FgHiGreen, color.Bold).SprintFunc()
+			fileColor := color.New(color.FgHiWhite).SprintFunc()
+
+			fmt.Printf("\n%s\n", header("Matching files:"))
 			for _, file := range matchedFiles {
-				fmt.Println(file)
+				fmt.Printf("▸ %s\n", fileColor(file))
 			}
 		}
 	},

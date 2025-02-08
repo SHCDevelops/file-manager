@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/SHCDevelops/file-manager/internal/filesystem"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"strings"
 )
@@ -20,17 +21,24 @@ It uses file hashes to identify duplicates.`,
 		ignoreList := strings.Split(ignorePattern, ",")
 
 		duplicates, err := filesystem.FindDuplicates(directory, ignoreList)
+
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			color.Red("Error: %v\n", err)
 			return
 		}
 
 		if len(duplicates) == 0 {
-			fmt.Println("No duplicates found.")
+			color.Green("No duplicates found. 🎉")
 		} else {
-			fmt.Println("Duplicates found:")
-			for _, group := range duplicates {
-				fmt.Println(group)
+			groupHeader := color.New(color.FgHiRed, color.Bold).SprintFunc()
+			fileColor := color.New(color.FgHiYellow).SprintFunc()
+
+			fmt.Printf("\n%s\n", groupHeader("Duplicates found:"))
+			for i, group := range duplicates {
+				fmt.Printf("\n%s %d\n", groupHeader("Group"), i+1)
+				for _, file := range group {
+					fmt.Printf("▸ %s\n", fileColor(file))
+				}
 			}
 		}
 	},
