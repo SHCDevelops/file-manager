@@ -2,11 +2,17 @@ package filesystem
 
 import (
 	"bufio"
+	"bytes"
 	"github.com/SHCDevelops/file-manager/lib/utils"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+)
+
+const (
+	maxScanTokenSize = 1024 * 1024 // 1 MB
 )
 
 type CodeStats struct {
@@ -24,7 +30,6 @@ func CountCodeLines(root string, ignoreList []string, ignoreLanguages []string) 
 	stats := &CodeStats{
 		Languages: make(map[string]*LanguageStat),
 	}
-
 	ignoredLangs := make(map[string]bool)
 	for _, lang := range ignoreLanguages {
 		ignoredLangs[strings.ToLower(lang)] = true
@@ -34,32 +39,31 @@ func CountCodeLines(root string, ignoreList []string, ignoreLanguages []string) 
 	var mu sync.Mutex
 	var errors []error
 
+	semaphore := make(chan struct{}, 10) // Пул из 10 горутин
+
 	errWalk := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-
 		relPath, _ := filepath.Rel(root, path)
-
 		if info.IsDir() {
 			if utils.IsIgnored(relPath, ignoreList, true) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-
 		if utils.IsIgnored(relPath, ignoreList, false) {
 			return nil
 		}
-
 		lang := getLanguage(path, ignoredLangs)
 		if lang == "" {
 			return nil
 		}
-
 		wg.Add(1)
+		semaphore <- struct{}{}
 		go func() {
 			defer wg.Done()
+			defer func() { <-semaphore }()
 			total, comments, err := analyzeFile(path, lang)
 			if err != nil {
 				mu.Lock()
@@ -67,24 +71,19 @@ func CountCodeLines(root string, ignoreList []string, ignoreLanguages []string) 
 				mu.Unlock()
 				return
 			}
-
 			stats.mu.Lock()
 			defer stats.mu.Unlock()
-
 			if _, exists := stats.Languages[lang]; !exists {
 				stats.Languages[lang] = &LanguageStat{}
 			}
-
 			stats.Languages[lang].TotalLines += total
 			stats.Languages[lang].CommentLines += comments
 			stats.Languages[lang].CodeLines = stats.Languages[lang].TotalLines - stats.Languages[lang].CommentLines
 		}()
-
 		return nil
 	})
 
 	wg.Wait()
-
 	if errWalk != nil {
 		return nil, errWalk
 	}
@@ -94,7 +93,6 @@ func CountCodeLines(root string, ignoreList []string, ignoreLanguages []string) 
 	if len(errors) > 0 {
 		return nil, errors[0]
 	}
-
 	return stats, nil
 }
 
@@ -150,16 +148,13 @@ func getLanguage(path string, ignoreLanguages map[string]bool) string {
 		".yml":   "YAML",
 		".toml":  "TOML",
 	}
-
 	lang := extToLang[ext]
 	if lang == "" {
 		return ""
 	}
-
 	if ignoreLanguages[strings.ToLower(lang)] {
 		return ""
 	}
-
 	return extToLang[ext]
 }
 
@@ -170,15 +165,14 @@ func analyzeFile(path, lang string) (int, int, error) {
 	}
 	defer file.Close()
 
+	reader := bufio.NewReaderSize(file, maxScanTokenSize)
 	var parser LineParser
 	switch lang {
 	case "HTML":
 		parser = &htmlParser{}
 	case "CSS":
 		parser = &cssParser{}
-	case "JavaScript", "TypeScript", "Java", "C++", "C", "PHP", "Swift", "Kotlin", "Rust", "Dart", "C#", "Scala":
-		parser = &cStyleParser{}
-	case "Go":
+	case "JavaScript", "TypeScript", "Java", "C++", "C", "PHP", "Swift", "Kotlin", "Rust", "Dart", "C#", "Scala", "Go":
 		parser = &cStyleParser{}
 	case "Python", "Shell", "Perl", "YAML":
 		parser = &hashParser{}
@@ -195,220 +189,347 @@ func analyzeFile(path, lang string) (int, int, error) {
 	default:
 		return 0, 0, nil
 	}
-
-	return parser.Parse(file)
+	return parser.Parse(reader)
 }
 
 type LineParser interface {
-	Parse(*os.File) (total int, comments int, err error)
+	Parse(*bufio.Reader) (total int, comments int, err error)
 }
 
 type htmlParser struct{}
 
-func (p *htmlParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *htmlParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inComment := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inComment:
 			comments++
-			if strings.Contains(line, "-->") {
+			if strings.Contains(lineStr, "-->") {
 				inComment = false
 			}
-		case strings.Contains(line, "<!--"):
+		case strings.Contains(lineStr, "<!--"):
 			comments++
-			if !strings.Contains(line, "-->") {
+			if !strings.Contains(lineStr, "-->") {
 				inComment = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type cssParser struct{}
 
-func (p *cssParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *cssParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inComment := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inComment:
 			comments++
-			if strings.Contains(line, "*/") {
+			if strings.Contains(lineStr, "*/") {
 				inComment = false
 			}
-		case strings.HasPrefix(line, "/*"):
+		case strings.HasPrefix(lineStr, "/*"):
 			comments++
-			if !strings.Contains(line, "*/") {
+			if !strings.Contains(lineStr, "*/") {
 				inComment = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type cStyleParser struct{}
 
-func (p *cStyleParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *cStyleParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.Contains(line, "*/") {
+			if strings.Contains(lineStr, "*/") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "//"):
+		case strings.HasPrefix(lineStr, "//"):
 			comments++
-		case strings.HasPrefix(line, "/*"):
+		case strings.HasPrefix(lineStr, "/*"):
 			comments++
-			if !strings.Contains(line, "*/") {
+			if !strings.Contains(lineStr, "*/") {
 				inMultiLine = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type hashParser struct{}
 
-func (p *hashParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *hashParser) Parse(reader *bufio.Reader) (int, int, error) {
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "#") {
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
+		if strings.HasPrefix(lineStr, "#") {
 			comments++
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type rubyParser struct{}
 
-func (p *rubyParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *rubyParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.HasPrefix(line, "=end") {
+			if strings.HasPrefix(lineStr, "=end") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "=begin"):
+		case strings.HasPrefix(lineStr, "=begin"):
 			comments++
 			inMultiLine = true
-		case strings.HasPrefix(line, "#"):
+		case strings.HasPrefix(lineStr, "#"):
 			comments++
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type haskellParser struct{}
 
-func (p *haskellParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *haskellParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.Contains(line, "-}") {
+			if strings.Contains(lineStr, "-}") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "--"):
+		case strings.HasPrefix(lineStr, "--"):
 			comments++
-		case strings.HasPrefix(line, "{-"):
+		case strings.HasPrefix(lineStr, "{-"):
 			comments++
-			if !strings.Contains(line, "-}") {
+			if !strings.Contains(lineStr, "-}") {
 				inMultiLine = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type sqlParser struct{}
 
-func (p *sqlParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *sqlParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.Contains(line, "*/") {
+			if strings.Contains(lineStr, "*/") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "--"):
+		case strings.HasPrefix(lineStr, "--"):
 			comments++
-		case strings.HasPrefix(line, "/*"):
+		case strings.HasPrefix(lineStr, "/*"):
 			comments++
-			if !strings.Contains(line, "*/") {
+			if !strings.Contains(lineStr, "*/") {
 				inMultiLine = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type luaParser struct{}
 
-func (p *luaParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *luaParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.Contains(line, "]]") {
+			if strings.Contains(lineStr, "]]") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "--"):
-			if strings.HasPrefix(line, "--[[") {
+		case strings.HasPrefix(lineStr, "--"):
+			if strings.HasPrefix(lineStr, "--[[") {
 				comments++
-				if !strings.Contains(line, "]]") {
+				if !strings.Contains(lineStr, "]]") {
 					inMultiLine = true
 				}
 			} else {
@@ -416,34 +537,50 @@ func (p *luaParser) Parse(file *os.File) (int, int, error) {
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
 
 type pascalParser struct{}
 
-func (p *pascalParser) Parse(file *os.File) (int, int, error) {
-	scanner := bufio.NewScanner(file)
+func (p *pascalParser) Parse(reader *bufio.Reader) (int, int, error) {
 	inMultiLine := false
 	total, comments := 0, 0
-
-	for scanner.Scan() {
+	for {
+		line, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, 0, err
+		}
 		total++
-		line := strings.TrimSpace(scanner.Text())
-
+		lineStr := strings.TrimSpace(string(line))
+		if isPrefix {
+			var buf bytes.Buffer
+			buf.Write(line)
+			for isPrefix {
+				line, isPrefix, err = reader.ReadLine()
+				if err != nil {
+					return 0, 0, err
+				}
+				buf.Write(line)
+			}
+			lineStr = strings.TrimSpace(buf.String())
+		}
 		switch {
 		case inMultiLine:
 			comments++
-			if strings.Contains(line, "}") {
+			if strings.Contains(lineStr, "}") {
 				inMultiLine = false
 			}
-		case strings.HasPrefix(line, "//"):
+		case strings.HasPrefix(lineStr, "//"):
 			comments++
-		case strings.HasPrefix(line, "{"):
+		case strings.HasPrefix(lineStr, "{"):
 			comments++
-			if !strings.Contains(line, "}") {
+			if !strings.Contains(lineStr, "}") {
 				inMultiLine = true
 			}
 		}
 	}
-	return total, comments, scanner.Err()
+	return total, comments, nil
 }
